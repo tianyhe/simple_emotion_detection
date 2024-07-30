@@ -1,0 +1,17 @@
+# Ignore files in log, models, and results directories, but keep the directories
+logs/*
+!logs/.gitkeep
+models/*
+!models/.gitkeep
+results/*
+!results/.gitkeep
+
+# Ignore the audio_speech_dataset directory contents
+data/*
+
+# Ignore compiled Python files
+__pycache__/
+*.pyc
+
+# Ignore Zone.Identifier files
+*.Zone.Identifier

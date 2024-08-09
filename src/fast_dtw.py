@@ -1,7 +1,6 @@
 import numpy as np
 import json
-#from fastdtw import fastdtw
-from scipy.spatial.distance import euclidean as scipy_euclidean
+from scipy.spatial.distance import euclidean
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
@@ -12,101 +11,160 @@ from sklearn.model_selection import cross_val_score
 from skopt import BayesSearchCV
 from skopt.space import Real
 from helpers import setup_logger
+from collections import defaultdict
+import numbers
 
-def classical_dtw(x, y, dist=scipy_euclidean):
-    """Compute Dynamic Time Warping (DTW) distance between two sequences."""
-    nx, ny = len(x), len(y)
-    cost_matrix = np.zeros((nx + 1, ny + 1))
-    cost_matrix[0, 1:] = np.inf
-    cost_matrix[1:, 0] = np.inf
-
-    for i in range(1, nx + 1):
-        for j in range(1, ny + 1):
-            cost = dist(x[i - 1], y[j - 1])
-            cost_matrix[i, j] = cost + min(
-                cost_matrix[i - 1, j], cost_matrix[i, j - 1], cost_matrix[i - 1, j - 1]
-            )
-
-    return cost_matrix[nx, ny], cost_matrix
-
-def downsample(series):
-    """Downsample the time series."""
-    return series[::2]  # Simple downsampling by taking every second point 
-
-def fast_dtw(x, y, radius=1, dist=scipy_euclidean):
-    """Compute Fast DTW distance between two sequences."""
-    # Downsample the series
-    x_downsampled, y_downsampled = downsample(x), downsample(y)
-    
-    # Compute DTW on downsampled sequences
-    _, downsampled_cost_matrix = classical_dtw(x_downsampled, y_downsampled, dist)
-    
-    # Refine the DTW on the original sequences within the radius window
-    x_len, y_len = len(x), len(y)
-    cost_matrix = np.inf * np.ones((x_len, y_len))
-    cost_matrix[0, 0] = 0
-
-    for i in range(x_len):
-        for j in range(y_len):
-            if i == 0 and j == 0:
-                cost_matrix[i, j] = 0
-            else:
-                min_cost = np.inf
-                for di in range(max(0, i - radius), min(x_len, i + radius + 1)):
-                    for dj in range(max(0, j - radius), min(y_len, j + radius + 1)):
-                        cost = dist(x[i], y[j])
-                        min_cost = min(min_cost, cost + cost_matrix[di, dj])
-                cost_matrix[i, j] = min_cost
-
-    return cost_matrix[x_len - 1, y_len - 1] 
-
-
-def traceback(D):
+def fastdtw(x, y, radius=1, dist=None):
     """
-    Traceback for Fast DTW to get the optimal path.
+    Compute the approximate distance between two time series using FastDTW.
+    
+    Parameters
+    ----------
+    x : array_like
+        First time series.
+    y : array_like
+        Second time series.
+    radius : int
+        Radius of the window used for approximation.
+    dist : function or int
+        Distance metric. If int, p-norm is used. If function, it computes distance between points.
 
-    Parameters:
-    - D (numpy array): Cost matrix from Fast DTW.
-
-    Returns:
-    - path (list): Optimal path for alignment.
+    Returns
+    -------
+    distance : float
+        Approximate distance between the two time series.
+    path : list
+        List of index pairs representing the optimal path.
     """
-    i, j = np.array(D.shape) - 1
-    p, q = [i], [j]
-    while i > 0 and j > 0:
-        tb = np.argmin((D[i - 1, j - 1], D[i - 1, j], D[i, j - 1]))
-        if tb == 0:
-            i -= 1
-            j -= 1
-        elif tb == 1:
-            i -= 1
-        else:
-            j -= 1
-        p.insert(0, i)
-        q.insert(0, j)
-    while i > 0:
-        i -= 1
-        p.insert(0, i)
-        q.insert(0, 0)
-    while j > 0:
-        j -= 1
-        p.insert(0, 0)
-        q.insert(0, j)
-    return list(zip(p, q))
+    x, y, dist = _prep_inputs(x, y, dist)
+    return _fastdtw(x, y, radius, dist)
+
+def _prep_inputs(x, y, dist):
+    x = np.asarray(x, dtype='float')
+    y = np.asarray(y, dtype='float')
+
+    if x.ndim == y.ndim > 1 and x.shape[1] != y.shape[1]:
+        raise ValueError('Second dimension of x and y must be the same')
+    
+    if isinstance(dist, numbers.Number) and dist <= 0:
+        raise ValueError('dist cannot be a negative integer')
+
+    if dist is None:
+        dist = np.abs
+    elif isinstance(dist, numbers.Number):
+        dist = lambda a, b: np.linalg.norm(np.atleast_1d(a) - np.atleast_1d(b), ord=dist)
+    
+    return x, y, dist
+
+def _fastdtw(x, y, radius, dist):
+    min_time_size = radius + 2
+
+    if len(x) < min_time_size or len(y) < min_time_size:
+        return dtw(x, y, dist=dist)
+
+    x_shrinked = _reduce_by_half(x)
+    y_shrinked = _reduce_by_half(y)
+    distance, path = _fastdtw(x_shrinked, y_shrinked, radius, dist)
+    window = _expand_window(path, len(x), len(y), radius)
+    return _dtw(x, y, window, dist)
+
+def _reduce_by_half(x):
+    return [(x[i] + x[i + 1]) / 2 for i in range(0, len(x) - len(x) % 2, 2)]
+
+def _expand_window(path, len_x, len_y, radius):
+    path_set = set(path)
+    for i, j in path:
+        for a, b in ((i + a, j + b)
+                     for a in range(-radius, radius + 1)
+                     for b in range(-radius, radius + 1)):
+            path_set.add((a, b))
+
+    window_set = set()
+    for i, j in path_set:
+        for a, b in ((i * 2, j * 2), (i * 2, j * 2 + 1),
+                     (i * 2 + 1, j * 2), (i * 2 + 1, j * 2 + 1)):
+            window_set.add((a, b))
+
+    window = []
+    start_j = 0
+    for i in range(len_x):
+        new_start_j = None
+        for j in range(start_j, len_y):
+            if (i, j) in window_set:
+                window.append((i, j))
+                if new_start_j is None:
+                    new_start_j = j
+            elif new_start_j is not None:
+                break
+        start_j = new_start_j
+
+    return window
+
+def dtw(x, y, dist=None):
+    """
+    Compute the exact distance between two time series using DTW.
+
+    Parameters
+    ----------
+    x : array_like
+        First time series.
+    y : array_like
+        Second time series.
+    dist : function or int
+        Distance metric. If int, p-norm is used. If function, it computes distance between points.
+
+    Returns
+    -------
+    distance : float
+        Exact distance between the two time series.
+    path : list
+        List of index pairs representing the optimal path.
+    """
+    x, y, dist = _prep_inputs(x, y, dist)
+
+    return _dtw(x, y, None, dist)
+
+def _dtw(x, y, window, dist):
+    len_x, len_y = len(x), len(y)
+    if window is None:
+        window = [(i, j) for i in range(len_x) for j in range(len_y)]
+    window = ((i + 1, j + 1) for i, j in window)
+    
+    D = defaultdict(lambda: (float('inf'),))
+    D[0, 0] = (0, 0, 0)
+    
+    for i, j in window:
+        dt = dist(x[i - 1], y[j - 1])
+        D[i, j] = min(
+            (D[i - 1, j][0] + dt, i - 1, j),
+            (D[i, j - 1][0] + dt, i, j - 1),
+            (D[i - 1, j - 1][0] + dt, i - 1, j - 1),
+            key=lambda a: a[0]
+        )
+    
+    path = []
+    i, j = len_x, len_y
+    while not (i == j == 0):
+        path.append((i - 1, j - 1))
+        i, j = D[i, j][1], D[i, j][2]
+    path.reverse()
+    
+    return (D[len_x, len_y][0], path)
 
 
 def euclidean_distance(x, y):
     """Compute Euclidean distance between two sequences using FastDTW."""
-    distance, _ = fast_dtw(x.T, y.T, dist=scipy_euclidean)
+    distance, _ = fastdtw(x.T, y.T, radius=1, dist=euclidean)
     return distance
+
 
 
 def derivative_dtw_distance(x, y):
     """Compute DTW distance between derivatives of two sequences using FastDTW."""
     dx = np.diff(x, axis=1)
     dy = np.diff(y, axis=1)
-    distance, _ = fast_dtw(
-        dx.T, dy.T, radius=1, dist=scipy_euclidean)  # TODO: Implement FastDTW from scratch
+    distance, _ = fastdtw(
+        dx.T, dy.T, radius=1, dist=euclidean)  
     return distance
 
 
@@ -231,7 +289,6 @@ def optimize_model(df, templates, distance_func, n_iter=50, logger=None):
         )
 
     return best_params, best_score, results
-
 
 def run_experiments(selected_df, emotion_templates, n_iter=50):
     """Run experiments for FastDTW and derivative FastDTW."""

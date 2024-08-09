@@ -17,9 +17,12 @@ mood-detection/
 │   ├── classical_dtw.py
 │   ├── data_preparation.py
 │   ├── dl_model.py
+│   ├── simple_model.py
 │   ├── fast_dtw.py
 │   └── helpers.py
-└── notes.ipynb
+│── notes.ipynb
+│── report.pdf
+└── project_presentation.pdf
 ```
 
 ### Directories and Files
@@ -32,9 +35,12 @@ mood-detection/
   - `classical_dtw.py`: Implementation of the classical DTW algorithm.
   - `data_preparation.py`: Scripts for preparing and preprocessing the audio data.
   - `dl_model.py`: Contains the deep learning model for emotion detection.
+  - `simple_model.py`: Contains the simple model for emotion detection.
   - `fast_dtw.py`: Implementation of the FastDTW algorithm.
   - `helpers.py`: Helper functions used across various scripts.
 - **notes.ipynb**: Jupyter notebook with detailed notes, visualizations, and analysis of the project.
+- **report.pdf**: Project report containing the detailed methodology, results, and analysis.
+- **project_presentation.pdf**: Presentation slides for the project.
 
 ## Installation
 To set up the project, follow these steps:
@@ -65,32 +71,15 @@ python src/data_preparation.py
 ```
 This script will preprocess the audio data and extract the necessary features for emotion detection.
 
-### Classical DTW
-To run the classical DTW algorithm, use the `classical_dtw.py` script:
-```sh
-python src/classical_dtw.py
-```
-This script computes the DTW distance using the classical DTW algorithm.
-
-### FastDTW
-To run the FastDTW algorithm, use the `fast_dtw.py` script:
-```sh
-python src/fast_dtw.py
-```
-This script computes the DTW distance using the FastDTW algorithm.
-
-### Deep Learning Model
-Train and evaluate the deep learning model using the `dl_model.py` script:
-```sh
-python src/dl_model.py
-```
-This script trains a deep learning model for emotion detection and evaluates its performance.
+### Experiments
+Run the experiments in the `notes.ipynb` notebook to compare the classical DTW and FastDTW algorithms.
 
 ## Notes and Analysis
 Detailed notes, visualizations, and analysis can be found in the `notes.ipynb` Jupyter notebook. This notebook includes:
 - Overview of the project
 - Data exploration and visualization
 - Comparison of classical DTW and FastDTW
+- Model development and training
 - Model performance analysis
 
 ## Reflection

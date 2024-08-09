@@ -92,6 +92,8 @@ The project compares the classical DTW and FastDTW algorithms, focusing on:
 This project demonstrates the effectiveness of DTW and its variants in emotion detection using audio features. It provides a comprehensive analysis of the trade-offs between classical DTW and FastDTW, offering insights into their performance in different scenarios.
 
 ## Acknowledgments
+Sara Iqbal Bavan
+
 Special thanks to the contributors and the resources used throughout the project.
 
 ## License

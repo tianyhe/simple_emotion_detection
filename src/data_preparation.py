@@ -188,8 +188,8 @@ def prepare_data(base_dir, output_file):
 
 
 if __name__ == "__main__":
-    base_directory = "../data/audio_speech_actors_01-24"
-    output_file = "../data/ravdess_temporal_features.csv"
+    base_directory = "./data/audio_speech_actors_01-24"
+    output_file = "./data/ravdess_features.csv"
     df = prepare_data(base_directory, output_file)
     print(f"Data preparation complete. Output saved to {output_file}")
     print(f"Total files processed: {len(df)}")

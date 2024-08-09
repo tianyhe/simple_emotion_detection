@@ -7,15 +7,19 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from fastdtw import fastdtw
+from fastdtw import fastdtw  # TODO: Replace with custom FastDTW implementation
 from scipy.spatial.distance import euclidean
 import json
 import os
 from datetime import datetime
-from classical_dtw import classical_dtw, classical_dtw_matrix, traceback
+from src.classical_dtw import classical_dtw_matrix, traceback
 
 
 class EmotionDataset(Dataset):
+    """
+    Dataset class for emotion classification using temporal features.
+    """
+
     def __init__(self, features, labels):
         self.features = features
         self.labels = labels
@@ -50,6 +54,10 @@ class EmotionDataset(Dataset):
 
 
 class EmotionClassifier(nn.Module):
+    """
+    LSTM-based neural network for emotion classification using temporal features.
+    """
+
     def __init__(self, mfcc_dim, stat_dim, hidden_size, num_classes):
         super(EmotionClassifier, self).__init__()
         self.lstm = nn.LSTM(mfcc_dim, hidden_size, batch_first=True)
@@ -168,30 +176,13 @@ def train_model(
     return results
 
 
-def align_sequences(sequences):
-    """Align sequences using FastDTW."""
-    max_len = max(seq.shape[1] for seq in sequences)
-    reference = np.zeros((sequences[0].shape[0], max_len))
-
-    aligned_sequences = []
-    for seq in sequences:
-        distance, path = fastdtw(
-            reference.T, seq.T, dist=euclidean
-        )  # TODO: Implement FastDTW from scratch
-        aligned_seq = np.zeros_like(reference)
-        for ref_idx, seq_idx in path:
-            aligned_seq[:, ref_idx] = seq[:, seq_idx]
-        aligned_sequences.append(aligned_seq)
-
-    return np.array(aligned_sequences)
-
-
-def align_sequences_classical(sequences):
+def align_sequences(sequences, fast_dtw=True):
     """
-    Align sequences using Classical DTW.
+    Align sequences using either FastDTW or Classical DTW.
 
     Parameters:
     - sequences (list): List of sequences (numpy arrays) to be aligned.
+    - fast_dtw (bool): If True, use FastDTW; otherwise, use Classical DTW.
 
     Returns:
     - aligned_sequences (numpy array): Aligned sequences.
@@ -201,8 +192,11 @@ def align_sequences_classical(sequences):
 
     aligned_sequences = []
     for seq in sequences:
-        cost_matrix = classical_dtw_matrix(reference.T, seq.T, dist=euclidean)
-        path = traceback(cost_matrix)
+        if fast_dtw:
+            distance, path = fastdtw(reference.T, seq.T)
+        else:
+            cost_matrix = classical_dtw_matrix(reference.T, seq.T)
+            path = traceback(cost_matrix)
 
         aligned_seq = np.zeros_like(reference)
         for ref_idx, seq_idx in path:
@@ -233,6 +227,7 @@ def run_experiments(
     - batch_size (int): Batch size for the DataLoader. Default is 32.
     - test_size (float): Proportion of the dataset to include in the validation split. Default is 0.2.
     - random_state (int): Random seed for reproducibility. Default is 42.
+    - fast_dtw (bool): If True, use FastDTW; otherwise, use Classical DTW. Default is True.
     """
 
     # Create directories if they don't exist
@@ -242,7 +237,7 @@ def run_experiments(
 
     # Set up logging
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file_path = f"../logs/dl_experiment_{current_time}.log"
+    log_file_path = f"../logs/dl_experiment_{current_time}_{'fast' if fast_dtw else 'classical'}_dtw.log"
     log_file = open(log_file_path, "w")
 
     # Load the data
@@ -266,12 +261,8 @@ def run_experiments(
     val_mfccs = [np.array(json.loads(sample["mfccs"])) for sample in X_val]
 
     # Align sequences using FastDTW or classical DTW
-    if fast_dtw:
-        aligned_train_mfccs = align_sequences(train_mfccs)
-        aligned_val_mfccs = align_sequences(val_mfccs)
-    else:
-        aligned_train_mfccs = align_sequences_classical(train_mfccs)
-        aligned_val_mfccs = align_sequences_classical(val_mfccs)
+    aligned_train_mfccs = align_sequences(train_mfccs, fast_dtw)
+    aligned_val_mfccs = align_sequences(val_mfccs, fast_dtw)
 
     # Update the features with aligned MFCCs
     for i, sample in enumerate(X_train):
@@ -303,9 +294,9 @@ def run_experiments(
         )
         * 2
     )  # * 2 for mean and std
-    hidden_size = hidden_size
     num_classes = len(le.classes_)
 
+    log_file.write(f"DTW method: {'FastDTW' if fast_dtw else 'Classical DTW'}\n")
     log_file.write(f"MFCC dim: {mfcc_dim}\n")
     log_file.write(f"Statistical features dim: {stat_dim}\n")
     log_file.write(f"Hidden size: {hidden_size}\n")
@@ -329,7 +320,7 @@ def run_experiments(
 
     # Save results to CSV
     results_df = pd.DataFrame(results)
-    results_csv_path = f"../results/dl_experiment_results_{current_time}.csv"
+    results_csv_path = f"../results/dl_experiment_results_{current_time}_{'fast' if fast_dtw else 'classical'}_dtw.csv"
     results_df.to_csv(results_csv_path, index=False)
 
     log_file.write(f"\nResults saved to {results_csv_path}")
